@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
     # Prepare the data
     from sklearn.preprocessing import LabelEncoder
-    #Deleting uselless  features
+    # Deleting useless features
     df.drop(columns=['ID'], inplace=True)
     df.drop(columns=['oral'], inplace=True)
     # Initialize LabelEncoder
@@ -76,13 +76,33 @@ if __name__ == "__main__":
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    # Train the model locally
-    model.fit(X_train, y_train, epochs=4)  
-    print("Local training completed")
-    #Model evaluation
-    loss, accuracy = model.evaluate(X_test, y_test)
-    print(f'Test Loss: {loss}, Test Accuracy: {accuracy}')
+    max_iterations = 20
+    iteration = 0
 
-    # Send the updated model back to the master
-    updated_weights = model.get_weights()
-    send_updated_model('http://master:5000/update_model', updated_weights)
+    while iteration < max_iterations:
+        print(f"Iteration {iteration + 1}/{max_iterations}")
+
+        # Fetch global model weights from the master
+        response = get_model_with_retries(url)
+        global_weights = response.json()['weights']
+        global_weights = [tf.convert_to_tensor(w) for w in global_weights]
+        model.set_weights(global_weights)
+        print("Global model weights updated")
+
+        # Train the model locally
+        model.fit(X_train, y_train, epochs=4)
+        print("Local training completed")
+
+        # Model evaluation
+        loss, accuracy = model.evaluate(X_test, y_test)
+        print(f'Test Loss: {loss}, Test Accuracy: {accuracy}')
+
+        # Get updated model weights after local training
+        updated_weights = model.get_weights()
+
+        # Send the updated model back to the master
+        send_updated_model('http://master:5000/update_model', updated_weights)
+
+        iteration += 1
+
+    print("Client reached maximum iterations. Stopping training.")
